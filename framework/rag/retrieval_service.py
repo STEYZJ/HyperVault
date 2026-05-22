@@ -52,6 +52,8 @@ class RetrievalService:
             )
             if chunk.is_memory:
                 score += request.memory_boost
+            if is_research_strategy_chunk(chunk):
+                score += request.research_strategy_boost
             hits.append(
                 SearchHit(
                     chunk_id=chunk.chunk_id,
@@ -100,15 +102,48 @@ def metadata_matches(chunk: ChunkRecord, filters: MetadataFilter | None) -> bool
         return False
     if filters.paths and chunk.file_path not in set(filters.paths):
         return False
+    if filters.path_prefixes and not any(
+        chunk.file_path.startswith(prefix) for prefix in filters.path_prefixes
+    ):
+        return False
     if filters.type and metadata.get("type") != filters.type:
         return False
     if filters.priority and metadata.get("priority") != filters.priority:
         return False
+    if filters.paper_id and metadata.get("paper_id") != filters.paper_id:
+        return False
+    if filters.venue and metadata.get("venue") != filters.venue:
+        return False
+    if filters.year is not None and normalize_int(metadata.get("year")) != filters.year:
+        return False
+    if filters.verified is not None and bool(metadata.get("verified")) != filters.verified:
+        return False
+    if filters.source and metadata.get("source") != filters.source:
+        return False
+    if filters.strategy_dimensions:
+        existing_dimensions = {str(value) for value in metadata.get("strategy_dimensions") or []}
+        if not existing_dimensions.intersection(filters.strategy_dimensions):
+            return False
     if filters.tags:
         existing = {str(tag) for tag in metadata.get("tags") or []}
         if not existing.intersection(filters.tags):
             return False
     return True
+
+
+def is_research_strategy_chunk(chunk: ChunkRecord) -> bool:
+    metadata_type = str(chunk.metadata.get("type") or "")
+    return metadata_type in {"paper_strategy", "research_pattern"} or chunk.file_path.startswith(
+        ("summaries/paper-strategies/", "memory/research-strategy/")
+    )
+
+
+def normalize_int(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def compute_recency_score(chunk: ChunkRecord) -> float:

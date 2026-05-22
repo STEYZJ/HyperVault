@@ -287,6 +287,17 @@ class SQLiteKnowledgeRepository:
             ).fetchall()
         return {str(row["chunk_id"]): chunk_record_from_row(row) for row in rows}
 
+    async def list_chunks_for_file(self, file_path: str) -> list[ChunkRecord]:
+        return self._list_chunks_for_file_sync(file_path)
+
+    def _list_chunks_for_file_sync(self, file_path: str) -> list[ChunkRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM chunks WHERE file_path = ? ORDER BY ordinal",
+                (file_path,),
+            ).fetchall()
+        return [chunk_record_from_row(row) for row in rows]
+
     async def lexical_search(self, query: str, limit: int = 50) -> list[tuple[str, float]]:
         return self._lexical_search_sync(query, limit)
 

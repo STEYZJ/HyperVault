@@ -20,6 +20,13 @@ class MetadataFilter(BaseModel):
     priority: str | None = None
     is_memory: bool | None = None
     paths: list[str] | None = None
+    path_prefixes: list[str] | None = None
+    paper_id: str | None = None
+    venue: str | None = None
+    year: int | None = None
+    verified: bool | None = None
+    strategy_dimensions: list[str] | None = None
+    source: str | None = None
 
 
 class SearchRequest(BaseModel):
@@ -30,6 +37,7 @@ class SearchRequest(BaseModel):
     lexical_weight: float = Field(default=0.22, ge=0.0, le=1.0)
     recency_weight: float = Field(default=0.06, ge=0.0, le=1.0)
     memory_boost: float = Field(default=0.18, ge=0.0, le=1.0)
+    research_strategy_boost: float = Field(default=0.12, ge=0.0, le=1.0)
 
 
 class SearchHit(BaseModel):

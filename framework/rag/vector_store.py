@@ -49,6 +49,12 @@ class QdrantVectorStore:
             "metadata.type": PayloadSchemaType.KEYWORD,
             "metadata.priority": PayloadSchemaType.KEYWORD,
             "metadata.tags": PayloadSchemaType.KEYWORD,
+            "metadata.paper_id": PayloadSchemaType.KEYWORD,
+            "metadata.venue": PayloadSchemaType.KEYWORD,
+            "metadata.year": PayloadSchemaType.INTEGER,
+            "metadata.verified": PayloadSchemaType.BOOL,
+            "metadata.strategy_dimensions": PayloadSchemaType.KEYWORD,
+            "metadata.source": PayloadSchemaType.KEYWORD,
         }
         for field_name, schema in indexes.items():
             try:
@@ -143,6 +149,27 @@ def build_qdrant_filter(filters: MetadataFilter | None) -> Filter | None:
     if filters.priority:
         must.append(
             FieldCondition(key="metadata.priority", match=MatchValue(value=filters.priority))
+        )
+    if filters.paper_id:
+        must.append(
+            FieldCondition(key="metadata.paper_id", match=MatchValue(value=filters.paper_id))
+        )
+    if filters.venue:
+        must.append(FieldCondition(key="metadata.venue", match=MatchValue(value=filters.venue)))
+    if filters.year is not None:
+        must.append(FieldCondition(key="metadata.year", match=MatchValue(value=filters.year)))
+    if filters.verified is not None:
+        must.append(
+            FieldCondition(key="metadata.verified", match=MatchValue(value=filters.verified))
+        )
+    if filters.source:
+        must.append(FieldCondition(key="metadata.source", match=MatchValue(value=filters.source)))
+    if filters.strategy_dimensions:
+        must.append(
+            FieldCondition(
+                key="metadata.strategy_dimensions",
+                match=MatchAny(any=filters.strategy_dimensions),
+            )
         )
     if filters.tags:
         must.append(FieldCondition(key="metadata.tags", match=MatchAny(any=filters.tags)))

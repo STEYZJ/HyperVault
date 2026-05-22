@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "hypervault": {
+      "command": "conda",
+      "args": [
+        "run",
+        "-n",
+        "HyperVault",
+        "python",
+        "-m",
+        "framework.tools.strategy_mcp_server"
+      ],
+      "env": {
+        "VAULT_PATH": "knowledge-vault",
+        "RUNTIME_PATH": "runtime"
+      }
+    }
+  }
+}

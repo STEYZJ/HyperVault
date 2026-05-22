@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     embedding_dim: int = 1536
     offline_test_embeddings: bool = False
 
+    strategy_llm_provider: str = "openai"
+    strategy_llm_model: str = "gpt-4o-mini"
+    strategy_extraction_temperature: float = 0.2
+    strategy_max_evidence_items: int = 80
+    hyperagent_cli: Path | None = None
+    hyperagent_workdir: Path | None = None
+    hyperagent_timeout_seconds: float = 120.0
+
     index_batch_size: int = 64
     chunk_target_chars: int = 1600
     chunk_overlap_chars: int = 220
@@ -40,9 +48,17 @@ class Settings(BaseSettings):
     api_port: int = 8088
     log_level: str = "INFO"
 
-    @field_validator("vault_path", "runtime_path", mode="before")
+    @field_validator(
+        "vault_path",
+        "runtime_path",
+        "hyperagent_cli",
+        "hyperagent_workdir",
+        mode="before",
+    )
     @classmethod
-    def resolve_project_relative_paths(cls, value: str | Path) -> Path:
+    def resolve_project_relative_paths(cls, value: str | Path | None) -> Path | None:
+        if value in (None, ""):
+            return None
         path = Path(value)
         if not path.is_absolute():
             return (PROJECT_ROOT / path).resolve()
@@ -55,6 +71,26 @@ class Settings(BaseSettings):
     @property
     def vault_memory_path(self) -> Path:
         return self.vault_path / "memory"
+
+    @property
+    def paper_assets_path(self) -> Path:
+        return self.vault_path / "assets" / "papers"
+
+    @property
+    def paper_markdown_path(self) -> Path:
+        return self.vault_path / "research" / "papers"
+
+    @property
+    def paper_strategy_path(self) -> Path:
+        return self.vault_path / "summaries" / "paper-strategies"
+
+    @property
+    def research_strategy_memory_path(self) -> Path:
+        return self.vault_path / "memory" / "research-strategy"
+
+    @property
+    def hyperagent_experience_path(self) -> Path:
+        return self.vault_path / "research" / "hyperagent-experience"
 
 
 @lru_cache(maxsize=1)
