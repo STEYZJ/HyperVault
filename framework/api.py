@@ -25,6 +25,7 @@ from framework.strategy.schemas import (
     PaperImportRequest,
     PaperImportResponse,
     PaperStrategyCard,
+    StrategyCardsResponse,
     StrategyConsolidationRequest,
     StrategyConsolidationResponse,
     StrategyExtractionRequest,
@@ -149,6 +150,20 @@ async def strategy_consolidate(
         fake_strategy_llm=True,
     )
     return await service.consolidate_strategy(request)
+
+
+@app.get("/strategy/cards", response_model=StrategyCardsResponse)
+async def strategy_cards(
+    paper_id: str | None = None,
+    verified: bool | None = None,
+) -> StrategyCardsResponse:
+    settings = get_settings()
+    service = build_strategy_service(
+        settings,
+        settings.offline_test_embeddings,
+        fake_strategy_llm=True,
+    )
+    return StrategyCardsResponse(cards=await service.list_strategy_cards(paper_id, verified))
 
 
 @app.get("/strategy/cards/{paper_id}", response_model=PaperStrategyCard)

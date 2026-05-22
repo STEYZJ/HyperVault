@@ -256,6 +256,27 @@ class StrategyService:
             source_pdf=parsed.metadata.get("source_pdf"),
         )
 
+    async def list_strategy_cards(
+        self,
+        paper_id: str | None = None,
+        verified: bool | None = None,
+    ) -> list[PaperStrategyCard]:
+        if not self.settings.paper_strategy_path.exists():
+            return []
+        cards: list[PaperStrategyCard] = []
+        for path in sorted(self.settings.paper_strategy_path.glob("*-strategy.md")):
+            parsed = self.loader.load(path, self.settings.vault_path)
+            current_paper_id = str(
+                parsed.metadata.get("paper_id") or path.stem.removesuffix("-strategy")
+            )
+            if paper_id and current_paper_id != paper_id:
+                continue
+            current_verified = bool(parsed.metadata.get("verified"))
+            if verified is not None and current_verified != verified:
+                continue
+            cards.append(await self.strategy_report(current_paper_id))
+        return cards
+
     async def _resolve_or_import_paper(self, paper: str) -> PaperImportResponse:
         candidate = Path(paper).expanduser()
         if candidate.exists():

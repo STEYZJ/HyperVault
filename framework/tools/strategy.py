@@ -52,6 +52,23 @@ async def hypervault_consolidate_strategy(
     return response.model_dump(mode="json")
 
 
+async def hypervault_paper_strategy_report(paper_id: str) -> dict:
+    settings = get_settings()
+    service = build_strategy_service(settings, settings.offline_test_embeddings, True)
+    response = await service.strategy_report(paper_id)
+    return response.model_dump(mode="json")
+
+
+async def hypervault_list_strategy_cards(
+    paper_id: str | None = None,
+    verified: bool | None = None,
+) -> dict:
+    settings = get_settings()
+    service = build_strategy_service(settings, settings.offline_test_embeddings, True)
+    cards = await service.list_strategy_cards(paper_id=paper_id, verified=verified)
+    return {"cards": [card.model_dump(mode="json") for card in cards]}
+
+
 async def hypervault_submit_agent_experience(
     source: str,
     content: str,

@@ -125,7 +125,7 @@ CLI commands:
 
 - `python -m framework.cli import-paper --path <pdf-or-md>`
 - `python -m framework.cli extract-paper-strategy --paper <path-or-id>`
-- `python -m framework.cli strategy-search --query "problem gap" --dimension problem_gap_framing`
+- `python -m framework.cli strategy-search --query "problem gap" --dimension problem_gap`
 - `python -m framework.cli consolidate-strategy --topic "baseline selection"`
 - `python -m framework.cli submit-agent-experience --source hyperagent --path <file>`
 - `python -m framework.cli call-hyperagent-summary --topic <topic>`
@@ -133,6 +133,9 @@ CLI commands:
 HyperAgent compatibility is deliberately process/protocol based. HyperVault never imports
 HyperAgent Python packages; configure `HYPERAGENT_CLI` when you want HyperVault to call an
 external runner.
+
+Dimension filters accept the canonical names and short aliases such as `problem_gap`,
+`baseline`, `novelty`, `figure_table`, `reviewer`, `storytelling`, `ablation`, and `taste`.
 
 ## API
 
@@ -150,6 +153,7 @@ FastAPI endpoints:
 - `POST /strategy/extract`
 - `POST /strategy/search`
 - `POST /strategy/consolidate`
+- `GET /strategy/cards`
 - `GET /strategy/cards/{paper_id}`
 - `POST /agent-experience/submit`
 - `POST /integrations/hyperagent/summarize`

@@ -146,11 +146,14 @@ async def test_markdown_strategy_extraction_search_and_consolidation(tmp_path: P
     search = await service.search_strategy(
         StrategySearchRequest(
             query="baseline selection",
-            dimension="baseline_selection_logic",
+            dimension="baseline",
             top_k=5,
         )
     )
     assert any(hit.metadata.get("type") == "paper_strategy" for hit in search.hits)
+
+    cards = await service.list_strategy_cards()
+    assert [card.paper_id for card in cards] == ["fixture-paper"]
 
     memory = await service.consolidate_strategy(
         StrategyConsolidationRequest(topic="baseline selection", top_k=5)
@@ -199,3 +202,12 @@ async def test_pdf_import_extracts_text_and_captions(tmp_path: Path) -> None:
     assert response.source_kind == "pdf"
     assert response.markdown_path == "research/papers/pdf-fixture.md"
     assert response.figure_table_refs
+
+
+def test_strategy_dimension_aliases_are_normalized() -> None:
+    assert StrategySearchRequest(query="gap", dimension="problem_gap").dimension == (
+        "problem_gap_framing"
+    )
+    assert StrategyConsolidationRequest(topic="ablation", dimension="ablation").dimension == (
+        "ablation_logic"
+    )

@@ -32,6 +32,11 @@ async def consolidate_strategy(topic: str, dimension: str | None = None, top_k: 
     return await strategy_tools.hypervault_consolidate_strategy(topic, dimension, top_k)
 
 
+@mcp.tool(name="hypervault.paper_strategy_report")
+async def paper_strategy_report(paper_id: str) -> dict:
+    return await strategy_tools.hypervault_paper_strategy_report(paper_id)
+
+
 @mcp.tool(name="hypervault.submit_agent_experience")
 async def submit_agent_experience(source: str, content: str, title: str | None = None) -> dict:
     return await strategy_tools.hypervault_submit_agent_experience(source, content, title)

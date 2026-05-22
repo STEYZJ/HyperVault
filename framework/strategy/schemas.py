@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from framework.schemas import SearchHit, utc_now
 
@@ -62,6 +62,51 @@ DIMENSION_LABELS: dict[StrategyDimension, str] = {
     "ablation_logic": "Ablation Logic",
     "research_taste": "Research Taste",
 }
+
+STRATEGY_DIMENSION_ALIASES: dict[str, StrategyDimension] = {
+    "contribution": "contribution_packaging",
+    "contribution_packaging": "contribution_packaging",
+    "baseline": "baseline_selection_logic",
+    "baseline_selection": "baseline_selection_logic",
+    "baseline_selection_logic": "baseline_selection_logic",
+    "novelty": "novelty_construction",
+    "novelty_construction": "novelty_construction",
+    "problem_gap": "problem_gap_framing",
+    "problem-gap": "problem_gap_framing",
+    "problem_gap_framing": "problem_gap_framing",
+    "figure": "figure_table_expression",
+    "table": "figure_table_expression",
+    "figure_table": "figure_table_expression",
+    "figure_table_expression": "figure_table_expression",
+    "experiment": "experiment_arrangement",
+    "experiment_arrangement": "experiment_arrangement",
+    "reviewer": "reviewer_concern_handling",
+    "reviewer_concern": "reviewer_concern_handling",
+    "reviewer_concern_handling": "reviewer_concern_handling",
+    "credibility": "credibility_building",
+    "credibility_building": "credibility_building",
+    "weakness": "weakness_avoidance",
+    "weakness_avoidance": "weakness_avoidance",
+    "storytelling": "storytelling_moves",
+    "storytelling_moves": "storytelling_moves",
+    "claim": "claim_organization",
+    "claim_organization": "claim_organization",
+    "ablation": "ablation_logic",
+    "ablation_logic": "ablation_logic",
+    "taste": "research_taste",
+    "research_taste": "research_taste",
+}
+
+
+def normalize_strategy_dimension(value: str | None) -> StrategyDimension | None:
+    if value is None:
+        return None
+    key = value.strip().lower().replace("-", "_").replace(" ", "_")
+    dimension = STRATEGY_DIMENSION_ALIASES.get(key)
+    if dimension is None:
+        allowed = ", ".join(sorted(STRATEGY_DIMENSION_ALIASES))
+        raise ValueError(f"Unknown strategy dimension {value!r}. Allowed aliases: {allowed}")
+    return dimension
 
 
 class EvidenceSpan(BaseModel):
@@ -218,6 +263,11 @@ class StrategySearchRequest(BaseModel):
     verified: bool | None = None
     include_memory: bool = True
 
+    @field_validator("dimension", mode="before")
+    @classmethod
+    def normalize_dimension(cls, value: str | None) -> StrategyDimension | None:
+        return normalize_strategy_dimension(value)
+
 
 class StrategySearchResponse(BaseModel):
     query: str
@@ -229,12 +279,21 @@ class StrategyConsolidationRequest(BaseModel):
     dimension: StrategyDimension | None = None
     top_k: int = Field(default=8, ge=1, le=30)
 
+    @field_validator("dimension", mode="before")
+    @classmethod
+    def normalize_dimension(cls, value: str | None) -> StrategyDimension | None:
+        return normalize_strategy_dimension(value)
+
 
 class StrategyConsolidationResponse(BaseModel):
     path: str
     title: str
     source_count: int
     source_cards: list[str]
+
+
+class StrategyCardsResponse(BaseModel):
+    cards: list[PaperStrategyCard]
 
 
 class AgentExperienceSubmitRequest(BaseModel):

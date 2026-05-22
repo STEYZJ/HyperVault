@@ -2,3 +2,14 @@ conda create -n HyperVault python=3.12 -y
 conda activate HyperVault
 python -m pip install -r requirements.txt
 
+# Validation commands
+python -m compileall framework tests
+python -m pytest -q
+ruff check .
+
+# Offline strategy smoke without Docker Qdrant or OpenAI keys
+QDRANT_URL=local:runtime/qdrant-strategy-smoke \
+RUNTIME_PATH=runtime/strategy-smoke \
+STRATEGY_LLM_PROVIDER=fake \
+python -m framework.cli --offline-test-embeddings --fake-strategy-llm \
+  extract-paper-strategy --paper example-research-strategy-paper
