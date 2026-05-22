@@ -164,6 +164,16 @@ Do not commit `.env`, `runtime/`, Qdrant storage, generated caches, or ad hoc ru
 Project worklogs under `logs/worklog/` are intentional documentation. The vault contains sample
 notes only; private or sensitive notes should be reviewed before push.
 
+Branch maintenance is part of project maintenance:
+
+- Keep `main` as the stable integration branch.
+- Use scoped branches for non-trivial work: `feature/<topic>`, `fix/<topic>`, `docs/<topic>`,
+  or `ops/<topic>`.
+- Before merging a branch back to `main`, run tests, lint, compile checks, secret scan, and update
+  the worklog.
+- Delete or archive merged local branches after confirming their commits are integrated.
+- Record branch creation, merge, push failures, and cleanup in `logs/worklog/`.
+
 Repository About suggestion:
 
 - Description: `Production Obsidian + Agent Framework + RAG + Long-term Memory knowledge layer`

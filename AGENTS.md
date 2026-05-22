@@ -21,3 +21,9 @@ MCP-compatible tool wrappers expose `hypervault.import_paper`,
 `hypervault.extract_paper_strategy`, `hypervault.strategy_search`,
 `hypervault.consolidate_strategy`, `hypervault.paper_strategy_report`,
 `hypervault.submit_agent_experience`, and `hypervault.call_hyperagent_summary`.
+
+## Git Branch Discipline
+
+Keep `main` stable. Use scoped branches for substantial work, such as `feature/<topic>`,
+`fix/<topic>`, `docs/<topic>`, or `ops/<topic>`. Before merging back to `main`, run validation,
+update the project worklog, and confirm no secrets or runtime files are staged.
