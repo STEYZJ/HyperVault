@@ -32,6 +32,7 @@ class StrategyLLMProvider(Protocol):
         section_map: SectionMap,
         evidence_items: list[MinedEvidenceItem],
         metadata: dict,
+        repair_feedback: str | None = None,
     ) -> PaperStrategyCard:
         ...
 
@@ -48,6 +49,7 @@ class FakeStrategyLLMProvider:
         section_map: SectionMap,
         evidence_items: list[MinedEvidenceItem],
         metadata: dict,
+        repair_feedback: str | None = None,
     ) -> PaperStrategyCard:
         grouped: defaultdict[StrategyDimension, list[MinedEvidenceItem]] = defaultdict(list)
         for item in evidence_items:
@@ -63,7 +65,7 @@ class FakeStrategyLLMProvider:
             item = candidates[0]
             lessons.append(build_fake_lesson(dimension, item.evidence_span))
 
-        return PaperStrategyCard(
+        card = PaperStrategyCard(
             paper_id=paper_id,
             title=title,
             source_path=source_path,
@@ -78,6 +80,7 @@ class FakeStrategyLLMProvider:
             source_pdf=metadata.get("source_pdf"),
             metadata={"section_count": len(section_map.sections), "llm_provider": "fake"},
         )
+        return bind_card_to_supplied_evidence(card, evidence_items)
 
 
 class OpenAIStrategyLLMProvider:
@@ -88,7 +91,10 @@ class OpenAIStrategyLLMProvider:
                 "Use STRATEGY_LLM_PROVIDER=fake for offline validation."
             )
         self.settings = settings
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or None,
+        )
 
     async def synthesize(
         self,
@@ -99,6 +105,7 @@ class OpenAIStrategyLLMProvider:
         section_map: SectionMap,
         evidence_items: list[MinedEvidenceItem],
         metadata: dict,
+        repair_feedback: str | None = None,
     ) -> PaperStrategyCard:
         payload = {
             "paper_id": paper_id,
@@ -112,14 +119,25 @@ class OpenAIStrategyLLMProvider:
             ],
             "required_dimensions": list(ALL_STRATEGY_DIMENSIONS),
         }
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        if repair_feedback:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Repair the previous extraction. Return only valid JSON. "
+                        f"Validation feedback: {repair_feedback}"
+                    ),
+                }
+            )
         response = await self.client.chat.completions.create(
             model=self.settings.strategy_llm_model,
             temperature=self.settings.strategy_extraction_temperature,
             response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-            ],
+            messages=messages,
         )
         content = response.choices[0].message.content or "{}"
         data = json.loads(content)
@@ -137,7 +155,32 @@ class OpenAIStrategyLLMProvider:
             len(card.lessons),
             paper_id,
         )
+        return bind_card_to_supplied_evidence(card, evidence_items)
+
+
+def supported_evidence_keys(evidence_items: list[MinedEvidenceItem]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    for item in evidence_items:
+        evidence = item.evidence_span
+        if evidence.chunk_id:
+            keys.add((evidence.source_path, evidence.chunk_id))
+    return keys
+
+
+def bind_card_to_supplied_evidence(
+    card: PaperStrategyCard,
+    evidence_items: list[MinedEvidenceItem],
+) -> PaperStrategyCard:
+    evidence_keys = supported_evidence_keys(evidence_items)
+    if not evidence_keys:
         return card
+    for lesson in card.lessons:
+        evidence = lesson.evidence_span
+        if evidence.chunk_id and (evidence.source_path, evidence.chunk_id) not in evidence_keys:
+            raise ValueError(
+                f"{lesson.dimension} evidence_span does not match supplied evidence items"
+            )
+    return card
 
 
 SYSTEM_PROMPT = """You extract transferable research strategy, not paper summaries.

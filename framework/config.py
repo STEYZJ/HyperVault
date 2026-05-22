@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     qdrant_collection: str = "hypervault_chunks"
 
     openai_api_key: str | None = None
+    openai_base_url: str | None = None
     embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536
     offline_test_embeddings: bool = False
@@ -35,8 +36,13 @@ class Settings(BaseSettings):
     strategy_llm_model: str = "gpt-4o-mini"
     strategy_extraction_temperature: float = 0.2
     strategy_max_evidence_items: int = 80
+    strategy_llm_max_retries: int = 2
+    vision_provider: str = "none"
+    vision_model: str | None = None
+    export_figure_pages: bool = False
     hyperagent_cli: Path | None = None
     hyperagent_workdir: Path | None = None
+    hyperagent_command_template: str | None = None
     hyperagent_timeout_seconds: float = 120.0
 
     index_batch_size: int = 64

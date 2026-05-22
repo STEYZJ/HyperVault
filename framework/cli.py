@@ -8,7 +8,7 @@ from typing import Any
 
 import uvicorn
 
-from framework.config import get_settings
+from framework.config import PROJECT_ROOT, get_settings
 from framework.ingestion.watcher import VaultWatcherService
 from framework.logging_config import configure_logging
 from framework.memory.service import MemoryService
@@ -26,6 +26,9 @@ from framework.strategy.schemas import (
     StrategyExtractionRequest,
     StrategySearchRequest,
 )
+from framework.tools.openai_smoke import run_openai_strategy_smoke
+from framework.tools.preflight import docker_preflight
+from framework.tools.security import run_secret_scan
 from framework.tools.verify import verify_qdrant_collection
 
 logger = logging.getLogger(__name__)
@@ -63,6 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("watch", help="Watch vault and incrementally index Markdown changes")
     subparsers.add_parser("serve", help="Serve FastAPI app")
     subparsers.add_parser("verify-qdrant", help="Verify Qdrant collection and local chunk state")
+    subparsers.add_parser("secret-scan", help="Scan tracked files for secrets and blocked paths")
+    subparsers.add_parser("docker-preflight", help="Check Docker socket access for Qdrant")
+    subparsers.add_parser(
+        "openai-smoke",
+        help="Run a real OpenAI-compatible embedding/strategy smoke if local key exists",
+    )
 
     search = subparsers.add_parser("search", help="Hybrid semantic search")
     search.add_argument("--query", required=True)
@@ -159,6 +168,21 @@ async def run_command(args: argparse.Namespace) -> None:
 
     if args.command == "verify-qdrant":
         result = await verify_qdrant_collection(settings)
+        print_json(result.model_dump(mode="json"))
+        return
+
+    if args.command == "secret-scan":
+        result = run_secret_scan()
+        print_json(result.model_dump(mode="json"))
+        return
+
+    if args.command == "docker-preflight":
+        result = docker_preflight(project_dir=PROJECT_ROOT)
+        print_json(result.model_dump(mode="json"))
+        return
+
+    if args.command == "openai-smoke":
+        result = await run_openai_strategy_smoke(settings)
         print_json(result.model_dump(mode="json"))
         return
 

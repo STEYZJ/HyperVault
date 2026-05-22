@@ -12,6 +12,7 @@ vault. Do not import HyperAgent Python packages from HyperVault.
 - Consolidate long-term memory: `python -m framework.cli consolidate-strategy --topic "baseline selection"`
 - Submit agent experience: `python -m framework.cli submit-agent-experience --source hyperagent --path <file>`
 - Call external HyperAgent: `python -m framework.cli call-hyperagent-summary --topic <topic>`
+- Production checks: `python -m framework.cli secret-scan`, `docker-preflight`, `openai-smoke`
 
 Every generated research lesson must be evidence-backed and phrased as strategy:
 `strategy_claim`, `why_it_works`, `evidence_span`, `transferable_template`,
@@ -21,6 +22,9 @@ MCP-compatible tool wrappers expose `hypervault.import_paper`,
 `hypervault.extract_paper_strategy`, `hypervault.strategy_search`,
 `hypervault.consolidate_strategy`, `hypervault.paper_strategy_report`,
 `hypervault.submit_agent_experience`, and `hypervault.call_hyperagent_summary`.
+
+Do not print or persist API keys in agent logs. External HyperAgent calls must stay at the
+process/API/MCP layer; HyperVault must not import HyperAgent Python modules.
 
 ## Git Branch Discipline
 

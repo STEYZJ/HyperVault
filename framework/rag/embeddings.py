@@ -27,7 +27,10 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             raise RuntimeError("OPENAI_API_KEY is required for OpenAI embeddings.")
         self.model = settings.embedding_model
         self.dimensions = settings.embedding_dim
-        self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self._client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or None,
+        )
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -59,4 +62,3 @@ class DeterministicEmbeddingProvider(EmbeddingProvider):
             vector[idx] += sign
         norm = math.sqrt(sum(value * value for value in vector)) or 1.0
         return [value / norm for value in vector]
-

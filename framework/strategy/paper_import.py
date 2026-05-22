@@ -50,8 +50,17 @@ class PaperImportService:
         raise ValueError(f"Unsupported paper input type: {path.suffix}")
 
     def _import_pdf(self, path: Path, request: PaperImportRequest) -> PaperImportResponse:
-        extracted = extract_pdf(path)
         paper_id = request.paper_id or slugify(path.stem)
+        figure_asset_dir = None
+        figure_asset_rel_dir = None
+        if self.settings.export_figure_pages:
+            figure_asset_dir = self.settings.paper_assets_path / f"{paper_id}-pages"
+            figure_asset_rel_dir = f"assets/papers/{paper_id}-pages"
+        extracted = extract_pdf(
+            path,
+            figure_asset_dir=figure_asset_dir,
+            figure_asset_rel_dir=figure_asset_rel_dir,
+        )
         title = request.title or extracted.title or path.stem
         source_pdf_name = f"{paper_id}.pdf"
         target_pdf = self.settings.paper_assets_path / source_pdf_name
@@ -145,7 +154,11 @@ class PaperImportService:
         )
 
 
-def extract_pdf(path: Path) -> ExtractedPdf:
+def extract_pdf(
+    path: Path,
+    figure_asset_dir: Path | None = None,
+    figure_asset_rel_dir: str | None = None,
+) -> ExtractedPdf:
     if fitz is None:
         raise RuntimeError("PyMuPDF is required for PDF import. Install the pymupdf package.")
     document = fitz.open(path)  # type: ignore[union-attr]
@@ -160,6 +173,14 @@ def extract_pdf(path: Path) -> ExtractedPdf:
         total_text_chars += len(text.strip())
         page_number = page_index + 1
         captions = extract_figure_table_refs_from_text(text, page=page_number)
+        if captions and figure_asset_dir and figure_asset_rel_dir:
+            asset_path = export_pdf_page_asset(
+                page=page,
+                page_number=page_number,
+                asset_dir=figure_asset_dir,
+                asset_rel_dir=figure_asset_rel_dir,
+            )
+            captions = [ref.model_copy(update={"asset_path": asset_path}) for ref in captions]
         refs.extend(captions)
         page_markdown.append(render_pdf_page(page_number, text, captions))
     needs_ocr = document.page_count > 0 and total_text_chars < max(400, document.page_count * 40)
@@ -181,6 +202,22 @@ def extract_pdf(path: Path) -> ExtractedPdf:
     )
 
 
+def export_pdf_page_asset(
+    *,
+    page: Any,
+    page_number: int,
+    asset_dir: Path,
+    asset_rel_dir: str,
+) -> str:
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"page-{page_number:04d}.png"
+    target = asset_dir / filename
+    matrix = fitz.Matrix(1.5, 1.5)  # type: ignore[union-attr]
+    pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+    pixmap.save(target)
+    return f"{asset_rel_dir}/{filename}"
+
+
 def render_pdf_page(
     page_number: int,
     text: str,
@@ -189,7 +226,11 @@ def render_pdf_page(
     body = text.strip() or "[No extractable text on this page.]"
     caption_block = ""
     if refs:
-        lines = "\n".join(f"- {ref.label}: {ref.caption}" for ref in refs)
+        lines = "\n".join(
+            f"- {ref.label}: {ref.caption}"
+            + (f" (page asset: {ref.asset_path})" if ref.asset_path else "")
+            for ref in refs
+        )
         caption_block = f"\n\n### Figure/Table Captions\n\n{lines}"
     return f"## Page {page_number}\n\n<!-- page: {page_number} -->\n\n{body}{caption_block}"
 
