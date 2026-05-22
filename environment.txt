@@ -1,0 +1,4 @@
+conda create -n HyperVault python=3.12 -y
+conda activate HyperVault
+python -m pip install -r requirements.txt
+
