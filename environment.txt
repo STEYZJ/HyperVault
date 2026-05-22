@@ -6,6 +6,9 @@ python -m pip install -r requirements.txt
 python -m compileall framework tests
 python -m pytest -q
 ruff check .
+python -m framework.cli secret-scan
+python -m framework.cli docker-preflight
+python -m framework.cli openai-smoke
 
 # Offline strategy smoke without Docker Qdrant or OpenAI keys
 QDRANT_URL=local:runtime/qdrant-strategy-smoke \

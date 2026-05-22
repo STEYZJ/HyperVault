@@ -34,6 +34,14 @@ scripts/index_once.sh
 scripts/verify_collection.sh
 ```
 
+Production smoke and preflight checks:
+
+```bash
+scripts/secret_scan.sh
+scripts/docker_preflight.sh
+scripts/openai_smoke.sh
+```
+
 Run the API:
 
 ```bash
@@ -74,19 +82,34 @@ Important settings:
 - `QDRANT_URL=http://localhost:6333`
 - `QDRANT_COLLECTION=hypervault_chunks`
 - `OPENAI_API_KEY=...`
+- `OPENAI_BASE_URL=` (optional OpenAI-compatible endpoint)
 - `EMBEDDING_MODEL=text-embedding-3-small`
 - `EMBEDDING_DIM=1536`
 - `OFFLINE_TEST_EMBEDDINGS=false`
 - `STRATEGY_LLM_PROVIDER=openai`
 - `STRATEGY_LLM_MODEL=gpt-4o-mini`
 - `STRATEGY_EXTRACTION_TEMPERATURE=0.2`
+- `STRATEGY_LLM_MAX_RETRIES=2`
+- `EXPORT_FIGURE_PAGES=false`
 - `HYPERAGENT_CLI=/data2/lzj/HyperAgent/HyperAgent` (optional external runner)
+- `HYPERAGENT_COMMAND_TEMPLATE=` (optional full external command template)
 
 `OFFLINE_TEST_EMBEDDINGS=true` is only for local smoke tests without OpenAI. Do not use
 it for production indexes.
 
 Use `--fake-strategy-llm` or `STRATEGY_LLM_PROVIDER=fake` only for tests and smoke runs.
 Real paper strategy extraction requires a configured LLM provider and API key.
+
+`OPENAI_BASE_URL` is passed to both embedding and strategy LLM clients, so an
+OpenAI-compatible provider can be used without changing code. `scripts/openai_smoke.sh`
+uses a separate `runtime/openai-smoke` local store and only reports model names, base URL
+presence, card counts, and search counts. It never prints the API key.
+
+If `scripts/docker_preflight.sh` reports that `/var/run/docker.sock` is not readable and
+writable, Docker Qdrant cannot be production-verified from the current user. Fix options
+are: have an administrator repair Docker daemon/socket ownership, add the user to the
+effective Docker group and re-login, use root/rootless Docker, or point `QDRANT_URL` to an
+external Qdrant service.
 
 ## Indexing
 
@@ -121,6 +144,18 @@ Each lesson contains `strategy_claim`, `why_it_works`, `evidence_span`,
 `transferable_template`, `risk_or_limit`, and `confidence`. Missing evidence is recorded as
 `insufficient_evidence`; unsupported guesses are not promoted into memory.
 
+Research Taste is intentionally stricter than single-paper lessons. A single paper can
+surface only a limited signal, so `research_taste` is marked insufficient during
+single-paper extraction. Long-term Research Taste memory requires consolidation from at
+least two distinct paper strategy cards.
+
+PDF import uses PyMuPDF text layers. A scanned PDF is mostly page images with little or no
+extractable text, so HyperVault marks `needs_ocr: true` rather than fabricating evidence.
+OCR is not enabled by default because it adds heavier dependencies, is slower, can
+introduce recognition errors, and can weaken page/source evidence binding. Figure/table
+strategy v1 uses captions and nearby text; when `EXPORT_FIGURE_PAGES=true`, pages with
+detected figure/table captions are saved as assets for later optional vision analysis.
+
 CLI commands:
 
 - `python -m framework.cli import-paper --path <pdf-or-md>`
@@ -129,10 +164,15 @@ CLI commands:
 - `python -m framework.cli consolidate-strategy --topic "baseline selection"`
 - `python -m framework.cli submit-agent-experience --source hyperagent --path <file>`
 - `python -m framework.cli call-hyperagent-summary --topic <topic>`
+- `python -m framework.cli secret-scan`
+- `python -m framework.cli docker-preflight`
+- `python -m framework.cli openai-smoke`
 
 HyperAgent compatibility is deliberately process/protocol based. HyperVault never imports
 HyperAgent Python packages; configure `HYPERAGENT_CLI` when you want HyperVault to call an
-external runner.
+external runner. By default, HyperVault calls `hyperagent research extract --json --no-write`
+when an input path is supplied, or `hyperagent research search --json` for a topic-only
+lookup. `HYPERAGENT_COMMAND_TEMPLATE` can override this without coupling Python packages.
 
 Dimension filters accept the canonical names and short aliases such as `problem_gap`,
 `baseline`, `novelty`, `figure_table`, `reviewer`, `storytelling`, `ablation`, and `taste`.

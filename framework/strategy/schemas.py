@@ -227,6 +227,7 @@ class FigureTableReference(BaseModel):
     page: int | None = None
     caption: str
     context: str | None = None
+    asset_path: str | None = None
 
 
 class PaperImportResponse(BaseModel):

@@ -6,13 +6,13 @@ from types import SimpleNamespace
 import pytest
 
 from framework.config import Settings
-from framework.rag.embeddings import DeterministicEmbeddingProvider
+from framework.rag.embeddings import DeterministicEmbeddingProvider, OpenAIEmbeddingProvider
 from framework.rag.indexing_service import IndexingService
 from framework.rag.repository import SQLiteKnowledgeRepository
 from framework.rag.retrieval_service import RetrievalService
 from framework.rag.vector_store import chunk_payload
 from framework.strategy.hyperagent_bridge import HyperAgentBridge
-from framework.strategy.llm import FakeStrategyLLMProvider
+from framework.strategy.llm import FakeStrategyLLMProvider, OpenAIStrategyLLMProvider
 from framework.strategy.paper_import import PaperImportService
 from framework.strategy.quality import StrategyQualityError, StrategyQualityGate
 from framework.strategy.schemas import (
@@ -26,6 +26,9 @@ from framework.strategy.schemas import (
     StrategySearchRequest,
 )
 from framework.strategy.service import StrategyService
+from framework.tools.openai_smoke import run_openai_strategy_smoke
+from framework.tools.preflight import docker_preflight
+from framework.tools.security import scan_file
 
 
 class FakeVectorStore:
@@ -141,6 +144,8 @@ async def test_markdown_strategy_extraction_search_and_consolidation(tmp_path: P
     assert extraction.card.paper_id == "fixture-paper"
     assert extraction.card.lessons
     assert all(lesson.evidence_span.chunk_id for lesson in extraction.card.lessons)
+    assert all(lesson.dimension != "research_taste" for lesson in extraction.card.lessons)
+    assert "research_taste" in extraction.card.insufficient_dimensions
     assert extraction.card_path.startswith("summaries/paper-strategies/")
 
     search = await service.search_strategy(
@@ -161,6 +166,11 @@ async def test_markdown_strategy_extraction_search_and_consolidation(tmp_path: P
     assert memory.path.startswith("memory/research-strategy/")
     assert memory.source_count >= 1
 
+    with pytest.raises(RuntimeError, match="Research Taste"):
+        await service.consolidate_strategy(
+            StrategyConsolidationRequest(topic="Fixture Paper", dimension="research_taste")
+        )
+
 
 @pytest.mark.asyncio
 async def test_agent_experience_submit_and_hyperagent_fake_runner(tmp_path: Path) -> None:
@@ -169,7 +179,8 @@ async def test_agent_experience_submit_and_hyperagent_fake_runner(tmp_path: Path
     script.write_text(
         "#!/usr/bin/env python\n"
         "import sys\n"
-        "print('HyperAgent lesson: bound weak claims with explicit evidence.')\n",
+        "print('HyperAgent lesson: bound weak claims with explicit evidence.')\n"
+        "print('argv=' + ' '.join(sys.argv[1:]))\n",
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -180,6 +191,7 @@ async def test_agent_experience_submit_and_hyperagent_fake_runner(tmp_path: Path
         HyperAgentSummaryRequest(topic="claim boundary")
     )
     assert "HyperAgent lesson" in response.content
+    assert "research search" in response.content
     assert response.submitted_path
     assert response.submitted_path.startswith("research/hyperagent-experience/")
 
@@ -188,7 +200,11 @@ async def test_agent_experience_submit_and_hyperagent_fake_runner(tmp_path: Path
 async def test_pdf_import_extracts_text_and_captions(tmp_path: Path) -> None:
     fitz = pytest.importorskip("fitz")
     vault = tmp_path / "vault"
-    settings = Settings(vault_path=vault, runtime_path=tmp_path / "runtime")
+    settings = Settings(
+        vault_path=vault,
+        runtime_path=tmp_path / "runtime",
+        export_figure_pages=True,
+    )
     pdf_path = tmp_path / "paper.pdf"
     document = fitz.open()
     page = document.new_page()
@@ -202,6 +218,8 @@ async def test_pdf_import_extracts_text_and_captions(tmp_path: Path) -> None:
     assert response.source_kind == "pdf"
     assert response.markdown_path == "research/papers/pdf-fixture.md"
     assert response.figure_table_refs
+    assert response.figure_table_refs[0].asset_path
+    assert (vault / response.figure_table_refs[0].asset_path).exists()
 
 
 def test_strategy_dimension_aliases_are_normalized() -> None:
@@ -211,3 +229,105 @@ def test_strategy_dimension_aliases_are_normalized() -> None:
     assert StrategyConsolidationRequest(topic="ablation", dimension="ablation").dimension == (
         "ablation_logic"
     )
+
+
+def test_openai_base_url_is_passed_to_clients(monkeypatch: pytest.MonkeyPatch) -> None:
+    key = "sk" + "-" + ("baseurltest" * 3)
+    settings = Settings(
+        openai_api_key=key,
+        openai_base_url="https://example.invalid/v1",
+    )
+    captured: list[dict] = []
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs) -> None:
+            captured.append(kwargs)
+
+    monkeypatch.setattr("framework.rag.embeddings.AsyncOpenAI", FakeAsyncOpenAI)
+    monkeypatch.setattr("framework.strategy.llm.AsyncOpenAI", FakeAsyncOpenAI)
+
+    OpenAIEmbeddingProvider(settings)
+    OpenAIStrategyLLMProvider(settings)
+
+    assert captured == [
+        {"api_key": key, "base_url": "https://example.invalid/v1"},
+        {"api_key": key, "base_url": "https://example.invalid/v1"},
+    ]
+
+
+def test_secret_scan_redacts_findings(tmp_path: Path) -> None:
+    key = "sk" + "-" + ("redactedtest" * 3)
+    key_name = "OPENAI" + "_API_KEY"
+    source = tmp_path / "tracked.txt"
+    source.write_text(f"{key_name}={key}\n", encoding="utf-8")
+
+    findings = scan_file(source, tmp_path)
+
+    assert findings
+    assert key not in findings[0].excerpt
+    assert "***REDACTED***" in findings[0].excerpt
+
+
+def test_docker_preflight_reports_missing_socket(tmp_path: Path) -> None:
+    result = docker_preflight(socket_path=tmp_path / "missing.sock", project_dir=tmp_path)
+
+    assert not result.ok
+    assert not result.socket_exists
+    assert result.guidance
+
+
+@pytest.mark.asyncio
+async def test_openai_smoke_skips_without_key(tmp_path: Path) -> None:
+    settings = Settings(
+        vault_path=tmp_path / "vault",
+        runtime_path=tmp_path / "runtime",
+        openai_api_key=None,
+    )
+
+    result = await run_openai_strategy_smoke(settings)
+
+    assert result.status == "skipped"
+    assert "OPENAI_API_KEY" in str(result.reason)
+
+
+@pytest.mark.asyncio
+async def test_strategy_synthesis_repairs_after_bad_first_attempt(tmp_path: Path) -> None:
+    service = build_strategy_service(tmp_path)
+    source = tmp_path / "fixture-paper.md"
+    write_fixture_paper(source)
+
+    class RepairingProvider:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def synthesize(self, **kwargs):
+            self.attempts += 1
+            if self.attempts == 1:
+                evidence = kwargs["evidence_items"][0].evidence_span
+                return PaperStrategyCard(
+                    paper_id=kwargs["paper_id"],
+                    title=kwargs["title"],
+                    source_path=kwargs["source_path"],
+                    lessons=[
+                        StrategyLesson(
+                            dimension="novelty_construction",
+                            strategy_claim="The paper proposes a new method",
+                            why_it_works="It gives a method detail.",
+                            evidence_span=evidence,
+                            transferable_template="State the method and show a result.",
+                            risk_or_limit="summary only",
+                            confidence=0.6,
+                        )
+                    ],
+                )
+            return await FakeStrategyLLMProvider().synthesize(**kwargs)
+
+    provider = RepairingProvider()
+    service.llm_provider = provider
+
+    extraction = await service.extract_paper_strategy(
+        StrategyExtractionRequest(paper=str(source))
+    )
+
+    assert provider.attempts == 2
+    assert extraction.card.lessons

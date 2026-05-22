@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections import OrderedDict
@@ -16,7 +17,7 @@ from framework.strategy.evidence import build_section_map, mine_strategy_evidenc
 from framework.strategy.hyperagent_bridge import HyperAgentBridge
 from framework.strategy.llm import StrategyLLMProvider
 from framework.strategy.paper_import import PaperImportService, render_markdown, slugify
-from framework.strategy.quality import StrategyQualityGate
+from framework.strategy.quality import StrategyQualityError, StrategyQualityGate
 from framework.strategy.schemas import (
     DIMENSION_LABELS,
     AgentExperienceSubmitRequest,
@@ -82,7 +83,7 @@ class StrategyService:
             chunks,
             max_items=self.settings.strategy_max_evidence_items,
         )
-        card = await self.llm_provider.synthesize(
+        card = await self._synthesize_card_with_repair(
             paper_id=paper.paper_id,
             title=paper.title,
             source_path=paper.markdown_path,
@@ -90,7 +91,7 @@ class StrategyService:
             evidence_items=evidence,
             metadata=metadata,
         )
-        card = self.quality_gate.validate(card)
+        card = enforce_single_paper_research_taste_boundary(card)
         card_path = await self.write_strategy_card(card)
         await self.indexing_service.index_file(self.settings.vault_path / card_path)
         return StrategyExtractionResponse(
@@ -131,7 +132,7 @@ class StrategyService:
             StrategySearchRequest(
                 query=request.topic,
                 top_k=request.top_k,
-                dimension=request.dimension,
+                dimension=None if request.dimension == "research_taste" else request.dimension,
                 include_memory=False,
             )
         )
@@ -141,13 +142,22 @@ class StrategyService:
                 "No paper_strategy cards found for consolidation. "
                 "Create strategy cards before writing long-term research memory."
             )
+        source_cards = list(OrderedDict((hit.file_path, None) for hit in hits).keys())
+        source_papers = {
+            str(hit.metadata.get("paper_id") or hit.file_path)
+            for hit in hits
+            if hit.metadata.get("paper_id") or hit.file_path
+        }
+        if request.dimension == "research_taste" and len(source_papers) < 2:
+            raise RuntimeError(
+                "Research Taste consolidation requires at least two distinct paper_strategy cards."
+            )
 
         now = datetime.now(tz=UTC)
         title = f"Research Strategy - {request.topic}"
         filename = f"{now.strftime('%Y%m%d-%H%M%S')}-{slugify(request.topic)}.md"
         target = self.settings.research_strategy_memory_path / filename
         target.parent.mkdir(parents=True, exist_ok=True)
-        source_cards = list(OrderedDict((hit.file_path, None) for hit in hits).keys())
         dimensions = sorted(
             {
                 str(dimension)
@@ -155,6 +165,8 @@ class StrategyService:
                 for dimension in (hit.metadata.get("strategy_dimensions") or [])
             }
         )
+        if request.dimension and str(request.dimension) not in dimensions:
+            dimensions.append(str(request.dimension))
         frontmatter = {
             "tags": ["memory", "research-strategy", "consolidated"],
             "type": "research_pattern",
@@ -176,6 +188,45 @@ class StrategyService:
             title=title,
             source_count=len(hits),
             source_cards=source_cards,
+        )
+
+    async def _synthesize_card_with_repair(
+        self,
+        *,
+        paper_id: str,
+        title: str,
+        source_path: str,
+        section_map,
+        evidence_items,
+        metadata: dict,
+    ) -> PaperStrategyCard:
+        feedback: str | None = None
+        last_error: Exception | None = None
+        max_attempts = max(self.settings.strategy_llm_max_retries, 0) + 1
+        for attempt in range(max_attempts):
+            try:
+                card = await self.llm_provider.synthesize(
+                    paper_id=paper_id,
+                    title=title,
+                    source_path=source_path,
+                    section_map=section_map,
+                    evidence_items=evidence_items,
+                    metadata=metadata,
+                    repair_feedback=feedback,
+                )
+                return self.quality_gate.validate(card)
+            except (json.JSONDecodeError, ValueError, StrategyQualityError) as exc:
+                last_error = exc
+                feedback = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "Strategy synthesis attempt %s/%s failed for %s: %s",
+                    attempt + 1,
+                    max_attempts,
+                    paper_id,
+                    feedback,
+                )
+        raise RuntimeError(
+            f"Strategy extraction failed after {max_attempts} attempts: {last_error}"
         )
 
     async def submit_agent_experience(
@@ -362,6 +413,26 @@ def render_strategy_card_body(card: PaperStrategyCard) -> str:
         for dimension in card.insufficient_dimensions:
             lines.append(f"- {DIMENSION_LABELS[dimension]}: insufficient_evidence")
     return "\n".join(lines).strip() + "\n"
+
+
+def enforce_single_paper_research_taste_boundary(
+    card: PaperStrategyCard,
+) -> PaperStrategyCard:
+    retained_lessons = [
+        lesson for lesson in card.lessons if lesson.dimension != "research_taste"
+    ]
+    insufficient = list(dict.fromkeys([*card.insufficient_dimensions, "research_taste"]))
+    dimensions = [lesson.dimension for lesson in retained_lessons]
+    metadata = dict(card.metadata)
+    metadata["research_taste_scope"] = "limited_single_paper_signal"
+    return card.model_copy(
+        update={
+            "lessons": retained_lessons,
+            "strategy_dimensions": dimensions,
+            "insufficient_dimensions": insufficient,
+            "metadata": metadata,
+        }
+    )
 
 
 def render_strategy_memory_body(title: str, topic: str, hits: list) -> str:
